@@ -29,3 +29,6 @@ builds/
 *.apk
 *.aab
 *.ipa
+
+# Python caches (from Blender scripts)
+__pycache__/
