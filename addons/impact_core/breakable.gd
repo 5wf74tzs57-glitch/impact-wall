@@ -18,8 +18,11 @@ signal broken(hit_point: Vector3)
 @export var size: Vector3 = Vector3(0.6, 0.6, 0.15)
 ## How many pieces along each side. Keep the total at about 30 or fewer.
 @export var grid: Vector3i = Vector3i(5, 5, 1)
-## A hit must be at least this fast (meters per second) to shatter it.
-@export var min_break_speed: float = 6.0
+## How hard a hit must shove this object to shatter it: its sudden change in
+## momentum (mass x change in speed, in newton-seconds) while touching a
+## moving object. For scale: a 0.5 kg ball at 14 m/s gives a 1 kg target
+## about 3; a gentle nudge stays well under 1.
+@export var min_break_impulse: float = 1.5
 ## How hard the pieces burst outward from the hit point (meters per second).
 @export var burst_speed: float = 3.0
 ## How much of the hitting object's speed the pieces carry on (0 to 1).
@@ -36,6 +39,7 @@ var piece_color: Callable
 var _body: RigidBody3D
 var _pieces: Array[Dictionary] = []  # {offset: Vector3, mesh: BoxMesh, shape: BoxShape3D}
 var _is_broken := false
+var _last_velocity := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -46,8 +50,8 @@ func _ready() -> void:
 	if grid.x * grid.y * grid.z > 30:
 		push_warning("Breakable: %d pieces is a lot for a phone; aim for 30 or fewer." % (grid.x * grid.y * grid.z))
 	_body.contact_monitor = true
-	_body.max_contacts_reported = maxi(_body.max_contacts_reported, 4)
-	_body.body_entered.connect(_on_body_entered)
+	# Leave room for the hitting object: resting on a shelf alone can use 4.
+	_body.max_contacts_reported = maxi(_body.max_contacts_reported, 8)
 	_prepare_pieces()
 
 
@@ -61,13 +65,25 @@ func shatter(hit_point: Vector3, hit_velocity: Vector3 = Vector3.ZERO) -> void:
 	_spawn_pieces.call_deferred(hit_point, hit_velocity)
 
 
-func _on_body_entered(other: Node) -> void:
-	var other_body := other as RigidBody3D
-	if other_body == null:
+func _physics_process(_delta: float) -> void:
+	# How hard were we just shoved? Measure our own sudden change in momentum.
+	# (Comparing the ball's speed doesn't work: by the time a collision is
+	# reported, the ball has already bounced and slowed down.)
+	if _is_broken or _body == null:
 		return
-	var relative := other_body.linear_velocity - _body.linear_velocity
-	if relative.length() >= min_break_speed:
-		shatter(other_body.global_position, other_body.linear_velocity)
+	var shove := (_body.linear_velocity - _last_velocity).length() * _body.mass
+	_last_velocity = _body.linear_velocity
+	if shove < min_break_impulse:
+		return
+	# Only a moving object counts, so landing on the floor doesn't break us.
+	var state := PhysicsServer3D.body_get_direct_state(_body.get_rid())
+	if state == null:
+		return
+	for i in state.get_contact_count():
+		var other := state.get_contact_collider_object(i) as RigidBody3D
+		if other != null:
+			shatter(state.get_contact_collider_position(i), other.linear_velocity)
+			return
 
 
 func _prepare_pieces() -> void:
