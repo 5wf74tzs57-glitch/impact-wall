@@ -7,7 +7,7 @@ Games for the Impact Wall kit. An ESP32 hub with piezo sensors and microphones d
 1. Install **Godot 4.7.2** (standard version, not .NET) from https://godotengine.org/download. Use this exact version so the project opens the same for everyone.
 2. Clone this repo with GitHub Desktop (**File → Clone repository**).
 3. In Godot's Project Manager, click **Import**, pick this folder's `project.godot`, then **Import & Edit**.
-4. Press **F5** (or the ▶ button) to run. Click anywhere to throw a ball. Knock the target off the shelf to score.
+4. Press **F5** (or the ▶ button) to run. Click anywhere to throw a ball. Shatter the target to score.
 
 On a phone, a tap does the same as a click.
 
@@ -26,6 +26,7 @@ Every hit, whatever produced it, becomes a `HitEvent` (screen position, force, t
 | `addons/impact_core/hit_bus.gd` | Global hit channel (autoload `HitBus`) |
 | `addons/impact_core/sources/` | Where hits come from. `tap_hit_source.gd` turns taps and clicks into hits; Wi-Fi and Bluetooth hub sources come later |
 | `addons/impact_core/impact_bridge.gd` | Turns hits into virtual balls flying into the scene, plus a hit flash |
+| `addons/impact_core/breakable.gd` | Add to any physics object to make it shatter into pieces on a hard hit |
 | `games/target_practice/` | First test game |
 
 ## Settings worth knowing
