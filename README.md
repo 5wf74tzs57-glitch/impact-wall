@@ -35,6 +35,16 @@ Every hit, whatever produced it, becomes a `HitEvent` (screen position, force, t
 - **Renderer:** Mobile
 - **Orientation:** landscape (the game is projected)
 
+## Checking the project
+
+`tests/smoke_test.gd` checks that a hit on the target shatters it and scores. Run it from the project folder, no window needed:
+
+```
+godot --headless --path . -s res://tests/smoke_test.gd
+```
+
+It prints `PASS` or `FAIL`. Run it before opening a pull request.
+
 ## Working together
 
 - Make a branch for each feature (for example `shatter-targets`). Don't work directly on `main`.
