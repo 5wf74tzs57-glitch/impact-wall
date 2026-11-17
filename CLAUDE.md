@@ -11,7 +11,7 @@
 - Layers: hit sources → calibration → impact bridge → physics building blocks → game framework → games. Each layer only talks to the one below it.
 - All hits become a `HitEvent` sent through the `HitBus` autoload. Games never read a hit source directly.
 - **The projected wall is the camera's view.** `ImpactBridge` launches a virtual ball from the camera through the hit point. It flies straight (no gravity) until first contact, so it strikes exactly what was under the hit point.
-- Implemented so far: tap/click source, `ImpactBridge`, and the `target_practice` test scene. Planned: replay and simulated-noise sources, Wi-Fi (UDP) hub source and later Bluetooth, 4-point calibration (a homography from wall to screen), pre-fractured shattering targets, a scoring and round framework.
+- Implemented so far: tap/click source, `ImpactBridge`, `Breakable` (shatter into pieces prepared when the object is created; grid-cut boxes for now, swappable for Blender or VoronoiShatter meshes), and the `target_practice` test scene. Planned: replay and simulated-noise sources, Wi-Fi (UDP) hub source and later Bluetooth, 4-point calibration (a homography from wall to screen), a scoring and round framework.
 
 ## Phone limits
 - About 100 moving physics bodies at most, simple collision shapes, and debris removed after a few seconds.
