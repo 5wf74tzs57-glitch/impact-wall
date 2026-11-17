@@ -7,16 +7,25 @@ extends Node
 ## that). On a hard hit the intact object is removed, the pieces burst away
 ## from the hit point, shrink and disappear after a couple of seconds.
 ##
-## The pieces here are a grid of boxes cut from `size`. Later they can come
-## from meshes pre-fractured in Blender (Cell Fracture) or VoronoiShatter,
-## without changing how games use this node.
+## Pieces come from one of two places:
+##   - `pieces_scene`: a model made ahead of time in Blender with a "Shards"
+##     node whose children are the broken pieces, in place (realistic; see
+##     tools/blender/make_target_shards.py). Used when set.
+##   - Otherwise a grid of boxes cut from `size` (quick placeholder).
 
 ## Emitted when the object shatters, with the world position of the hit.
 signal broken(hit_point: Vector3)
 
-## Size of the box being cut up, in meters (match the collision shape).
+## Pre-broken pieces: a scene (e.g. a .glb from Blender) with a "Shards"
+## node whose MeshInstance3D children are the pieces.
+@export var pieces_scene: PackedScene
+## Materials to put on the pieces' surfaces, by surface number (empty or
+## null entries keep the model's own material). Lets one material, such as a
+## bullseye, cover the outside of every shard.
+@export var surface_materials: Array[Material] = []
+## Size of the box being cut up for grid pieces, in meters.
 @export var size: Vector3 = Vector3(0.6, 0.6, 0.15)
-## How many pieces along each side. Keep the total at about 30 or fewer.
+## Grid pieces only: how many along each side. Keep the total at 30 or fewer.
 @export var grid: Vector3i = Vector3i(5, 5, 1)
 ## How hard a hit must shove this object to shatter it: its sudden change in
 ## momentum (mass x change in speed, in newton-seconds) while touching a
@@ -37,7 +46,11 @@ signal broken(hit_point: Vector3)
 var piece_color: Callable
 
 var _body: RigidBody3D
-var _pieces: Array[Dictionary] = []  # {offset: Vector3, mesh: BoxMesh, shape: BoxShape3D}
+var _pieces: Array[Dictionary] = []  # {xform: Transform3D, mesh: Mesh, shape: Shape3D}
+
+## Pieces read from each pieces_scene, so the work is done once per model,
+## not once per target.
+static var _scene_cache := {}
 var _is_broken := false
 var _last_velocity := Vector3.ZERO
 
@@ -47,12 +60,15 @@ func _ready() -> void:
 	if _body == null:
 		push_error("Breakable must be a child of a RigidBody3D.")
 		return
-	if grid.x * grid.y * grid.z > 30:
-		push_warning("Breakable: %d pieces is a lot for a phone; aim for 30 or fewer." % (grid.x * grid.y * grid.z))
 	_body.contact_monitor = true
 	# Leave room for the hitting object: resting on a shelf alone can use 4.
 	_body.max_contacts_reported = maxi(_body.max_contacts_reported, 8)
-	_prepare_pieces()
+	if pieces_scene != null:
+		_pieces = _pieces_from_scene(pieces_scene)
+	else:
+		_prepare_grid_pieces()
+	if _pieces.size() > 30:
+		push_warning("Breakable: %d pieces is a lot for a phone; aim for 30 or fewer." % _pieces.size())
 
 
 ## Shatter right now, as if hit at `hit_point` by something moving at `hit_velocity`.
@@ -86,7 +102,41 @@ func _physics_process(_delta: float) -> void:
 			return
 
 
-func _prepare_pieces() -> void:
+static func _pieces_from_scene(scene: PackedScene) -> Array[Dictionary]:
+	var key := scene.resource_path if scene.resource_path != "" else str(scene.get_instance_id())
+	if _scene_cache.has(key):
+		return _scene_cache[key]
+	var pieces: Array[Dictionary] = []
+	var root := scene.instantiate()
+	var shards_root := root.find_child("Shards", true, false)
+	if shards_root == null:
+		push_error("Breakable: %s has no node named \"Shards\"." % key)
+	else:
+		for node in shards_root.get_children():
+			var mi := node as MeshInstance3D
+			if mi == null or mi.mesh == null:
+				continue
+			pieces.append({
+				"xform": _transform_to_root(mi, root),
+				"mesh": mi.mesh,
+				"shape": mi.mesh.create_convex_shape(true, false),
+			})
+	root.free()
+	_scene_cache[key] = pieces
+	return pieces
+
+
+static func _transform_to_root(node: Node3D, root: Node) -> Transform3D:
+	var xform := node.transform
+	var parent := node.get_parent()
+	while parent != null and parent != root:
+		if parent is Node3D:
+			xform = (parent as Node3D).transform * xform
+		parent = parent.get_parent()
+	return xform
+
+
+func _prepare_grid_pieces() -> void:
 	var cell := Vector3(size.x / grid.x, size.y / grid.y, size.z / grid.z)
 	var materials := {}
 	for ix in grid.x:
@@ -110,7 +160,7 @@ func _prepare_pieces() -> void:
 				mesh.material = materials[color]
 				var shape := BoxShape3D.new()
 				shape.size = piece_size
-				_pieces.append({"offset": offset, "mesh": mesh, "shape": shape})
+				_pieces.append({"xform": Transform3D(Basis(), offset), "mesh": mesh, "shape": shape})
 
 
 func _spawn_pieces(hit_point: Vector3, hit_velocity: Vector3) -> void:
@@ -133,9 +183,12 @@ func _spawn_pieces(hit_point: Vector3, hit_velocity: Vector3) -> void:
 		rb.add_child(col)
 		var mi := MeshInstance3D.new()
 		mi.mesh = piece["mesh"]
+		for s in mini(surface_materials.size(), mi.mesh.get_surface_count()):
+			if surface_materials[s] != null:
+				mi.set_surface_override_material(s, surface_materials[s])
 		rb.add_child(mi)
 		debris.add_child(rb)
-		rb.global_transform = body_xform.translated_local(piece["offset"])
+		rb.global_transform = body_xform * (piece["xform"] as Transform3D)
 
 		var away := rb.global_position - hit_point
 		var push := away.normalized() if away.length() > 0.001 else Vector3.UP

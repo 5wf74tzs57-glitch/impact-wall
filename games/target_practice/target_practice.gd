@@ -10,10 +10,10 @@ const SHELF_TOP := 1.0
 const SHELF_WIDTH := 4.0
 const TARGET_SIZE := Vector3(0.6, 0.6, 0.15)
 const RESPAWN_DELAY := 1.2
-const RED := Color(0.9, 0.2, 0.18)
-const WHITE := Color(0.95, 0.95, 0.92)
-## Bullseye ring edges, from the outside in (meters from the center).
-const RING_RADII := [0.27, 0.18, 0.09]
+## The target board and its pre-broken shards, made in Blender by
+## tools/blender/make_target_shards.py.
+const TARGET_MODEL_PATH := "res://assets/targets/target_shards.glb"
+const BULLSEYE_SHADER_PATH := "res://games/target_practice/bullseye.gdshader"
 
 var _camera: Camera3D
 var _target: RigidBody3D
@@ -22,9 +22,14 @@ var _score := 0
 var _throws := 0
 var _score_label: Label
 var _ui_layer: CanvasLayer
+var _target_model: PackedScene
+var _bullseye: ShaderMaterial
 
 
 func _ready() -> void:
+	_target_model = load(TARGET_MODEL_PATH)
+	_bullseye = ShaderMaterial.new()
+	_bullseye.shader = load(BULLSEYE_SHADER_PATH)
 	_build_environment()
 	_build_room()
 	_build_ui()
@@ -80,11 +85,11 @@ func _spawn_target() -> void:
 	box.size = TARGET_SIZE
 	shape.shape = box
 	_target.add_child(shape)
-	_target.add_child(_make_target_mesh())
+	_target.add_child(_make_target_visual())
 	var breakable := Breakable.new()
-	breakable.size = TARGET_SIZE
-	breakable.grid = Vector3i(5, 5, 1)
-	breakable.piece_color = _bullseye_color
+	breakable.pieces_scene = _target_model
+	var face_materials: Array[Material] = [_bullseye]  # surface 0 = outside; 1 = broken edges
+	breakable.surface_materials = face_materials
 	breakable.broken.connect(_on_target_broken)
 	_target.add_child(breakable)
 	add_child(_target)
@@ -93,39 +98,16 @@ func _spawn_target() -> void:
 	_target_knocked = false
 
 
-func _make_target_mesh() -> Node3D:
-	# A board with a red-and-white bullseye on the front.
-	var root := Node3D.new()
-	var board := MeshInstance3D.new()
-	var board_mesh := BoxMesh.new()
-	board_mesh.size = TARGET_SIZE
-	board_mesh.material = _material(WHITE)
-	board.mesh = board_mesh
-	root.add_child(board)
-	for i in RING_RADII.size():
-		var ring := MeshInstance3D.new()
-		var disc := CylinderMesh.new()
-		disc.top_radius = RING_RADII[i]
-		disc.bottom_radius = RING_RADII[i]
-		disc.height = 0.01
-		disc.material = _material(RED if i % 2 == 0 else WHITE)
-		ring.mesh = disc
-		ring.rotation_degrees.x = 90.0
-		ring.position.z = TARGET_SIZE.z / 2.0 + 0.005 + i * 0.002
-		root.add_child(ring)
-	return root
-
-
-## Color of the target at a point on it, so the pieces keep the bullseye pattern.
-func _bullseye_color(local_pos: Vector3) -> Color:
-	var r := Vector2(local_pos.x, local_pos.y).length()
-	if r > RING_RADII[0]:
-		return WHITE
-	if r > RING_RADII[1]:
-		return RED
-	if r > RING_RADII[2]:
-		return WHITE
-	return RED
+## The intact board from the Blender model, with the bullseye on it.
+func _make_target_visual() -> Node3D:
+	var model := _target_model.instantiate() as Node3D
+	var shards := model.find_child("Shards", true, false)
+	if shards != null:
+		shards.free()  # The pieces are only used when it breaks.
+	var board := model.find_child("Intact", true, false) as MeshInstance3D
+	if board != null:
+		board.set_surface_override_material(0, _bullseye)
+	return model
 
 
 func _build_environment() -> void:

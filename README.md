@@ -27,6 +27,8 @@ Every hit, whatever produced it, becomes a `HitEvent` (screen position, force, t
 | `addons/impact_core/sources/` | Where hits come from. `tap_hit_source.gd` turns taps and clicks into hits; Wi-Fi and Bluetooth hub sources come later |
 | `addons/impact_core/impact_bridge.gd` | Turns hits into virtual balls flying into the scene, plus a hit flash |
 | `addons/impact_core/breakable.gd` | Add to any physics object to make it shatter into pieces on a hard hit |
+| `assets/targets/` | Models made in Blender (the target and its shards) |
+| `tools/blender/` | Blender helper panel and the script that makes the shards |
 | `games/target_practice/` | First test game |
 
 ## Settings worth knowing
@@ -34,6 +36,26 @@ Every hit, whatever produced it, becomes a `HitEvent` (screen position, force, t
 - **Physics:** Jolt, at 60 ticks per second
 - **Renderer:** Mobile
 - **Orientation:** landscape (the game is projected)
+
+## Blender
+
+### Helper panel (for anyone, beginners welcome)
+`tools/blender/impact_wall_tools.py` adds an **Impact Wall** tab to Blender with one-click fixes for origins and transforms, each with a plain-language tip, plus a **Shatter Selected** button.
+
+To install it (once per computer):
+1. In Blender: **Edit → Preferences → Add-ons**.
+2. Click the small **⌄** arrow at the top right → **Install from Disk…**
+3. Choose `tools/blender/impact_wall_tools.py` from this repo, and make sure **Impact Wall Tools** is ticked.
+4. In the 3D view, press **N** to open the sidebar and click the **Impact Wall** tab.
+
+### Rebuilding the target's shards
+`assets/targets/target_shards.glb` (the board plus 24 pre-broken shards) is made by a script, so it can be rebuilt any time, for example with more pieces:
+
+```
+blender --background --python tools/blender/make_target_shards.py -- assets/targets/target_shards.glb
+```
+
+Change `PIECES`, `SEED` (a different break pattern) or `CENTER_BIAS` (more small pieces in the middle) at the top of the script.
 
 ## Checking the project
 

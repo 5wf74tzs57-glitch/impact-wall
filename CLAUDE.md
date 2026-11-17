@@ -11,7 +11,7 @@
 - Layers: hit sources → calibration → impact bridge → physics building blocks → game framework → games. Each layer only talks to the one below it.
 - All hits become a `HitEvent` sent through the `HitBus` autoload. Games never read a hit source directly.
 - **The projected wall is the camera's view.** `ImpactBridge` launches a virtual ball from the camera through the hit point. It flies straight (no gravity) until first contact, so it strikes exactly what was under the hit point.
-- Implemented so far: tap/click source, `ImpactBridge`, `Breakable` (shatter into pieces prepared when the object is created; grid-cut boxes for now, swappable for Blender or VoronoiShatter meshes), and the `target_practice` test scene. Planned: replay and simulated-noise sources, Wi-Fi (UDP) hub source and later Bluetooth, 4-point calibration (a homography from wall to screen), a scoring and round framework.
+- Implemented so far: tap/click source, `ImpactBridge`, `Breakable` (shatters into pieces prepared ahead of time: Voronoi shards from a Blender .glb via `pieces_scene`, or grid boxes as a fallback), and the `target_practice` test scene. Planned: replay and simulated-noise sources, Wi-Fi (UDP) hub source and later Bluetooth, 4-point calibration (a homography from wall to screen), a scoring and round framework.
 
 ## Phone limits
 - About 100 moving physics bodies at most, simple collision shapes, and debris removed after a few seconds.
@@ -20,6 +20,11 @@
 
 ## Future games
 Target Practice → brick breaker or bottle stack → a tower-toppling game (cel-shaded, bodies locked to a flat plane, earn and level up ball types, ball types defined as data resources) → sports games (soccer penalties, pitching).
+
+## Blender
+- `tools/blender/impact_wall_tools.py` is a beginner-friendly add-on (Tim is a Blender beginner: keep tips plain) and holds `voronoi_fracture()`, which `tools/blender/make_target_shards.py` also uses.
+- Pre-broken models are .glb files with an `Intact` mesh and a `Shards` empty whose children are the pieces. Every vertex's UV is its spot on the board's face, so one material (e.g. `games/target_practice/bullseye.gdshader`) spans the board and all shards; cut faces use the `Inside` material.
+- In the cloud workspace, Blender runs as the PyPI package `bpy` (blender.org downloads are blocked); `import bpy` must come before `import bmesh`.
 
 ## Working rules
 - Branch per feature and merge through pull requests; never commit to `main` directly.

@@ -31,11 +31,13 @@ func _run() -> void:
 	for i in 90:  # about 1.5 seconds of physics
 		await physics_frame
 
-	var shattered := game.find_child("Debris", true, false) != null
+	var debris := game.find_child("Debris", true, false)
+	var shattered := debris != null
+	var pieces := debris.get_child_count() if shattered else 0
 	var hits: int = game.get("_score")
 	var throws: int = game.get("_throws")
-	var ok := shattered and hits == 1 and throws == 1
-	_finish(ok, "shattered=%s hits=%d throws=%d" % [shattered, hits, throws])
+	var ok := shattered and pieces >= 10 and hits == 1 and throws == 1
+	_finish(ok, "shattered=%s pieces=%d hits=%d throws=%d" % [shattered, pieces, hits, throws])
 
 
 func _finish(ok: bool, detail: String) -> void:
