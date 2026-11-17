@@ -28,6 +28,9 @@ var _bullseye: ShaderMaterial
 
 func _ready() -> void:
 	_target_model = load(TARGET_MODEL_PATH)
+	if _target_model == null:
+		push_warning("Target model isn't imported yet, so using a plain target. "
+			+ "In Godot: Project > Reload Current Project.")
 	_bullseye = ShaderMaterial.new()
 	_bullseye.shader = load(BULLSEYE_SHADER_PATH)
 	_build_environment()
@@ -87,9 +90,12 @@ func _spawn_target() -> void:
 	_target.add_child(shape)
 	_target.add_child(_make_target_visual())
 	var breakable := Breakable.new()
-	breakable.pieces_scene = _target_model
-	var face_materials: Array[Material] = [_bullseye]  # surface 0 = outside; 1 = broken edges
-	breakable.surface_materials = face_materials
+	if _target_model != null:
+		breakable.pieces_scene = _target_model
+		var face_materials: Array[Material] = [_bullseye]  # surface 0 = outside; 1 = broken edges
+		breakable.surface_materials = face_materials
+	else:
+		breakable.size = TARGET_SIZE  # Plain box pieces until the model is imported.
 	breakable.broken.connect(_on_target_broken)
 	_target.add_child(breakable)
 	add_child(_target)
@@ -100,6 +106,8 @@ func _spawn_target() -> void:
 
 ## The intact board from the Blender model, with the bullseye on it.
 func _make_target_visual() -> Node3D:
+	if _target_model == null:
+		return _make_plain_target()
 	var model := _target_model.instantiate() as Node3D
 	var shards := model.find_child("Shards", true, false)
 	if shards != null:
@@ -108,6 +116,26 @@ func _make_target_visual() -> Node3D:
 	if board != null:
 		board.set_surface_override_material(0, _bullseye)
 	return model
+
+
+## A simple stand-in board, used only if the Blender model hasn't been imported.
+func _make_plain_target() -> Node3D:
+	var board := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = TARGET_SIZE
+	box.material = _material(Color(0.95, 0.95, 0.92))
+	board.mesh = box
+	var dot := MeshInstance3D.new()
+	var disc := CylinderMesh.new()
+	disc.top_radius = 0.15
+	disc.bottom_radius = 0.15
+	disc.height = 0.01
+	disc.material = _material(Color(0.9, 0.2, 0.18))
+	dot.mesh = disc
+	dot.rotation_degrees.x = 90.0
+	dot.position.z = TARGET_SIZE.z / 2.0 + 0.006
+	board.add_child(dot)
+	return board
 
 
 func _build_environment() -> void:
