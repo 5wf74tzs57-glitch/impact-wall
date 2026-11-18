@@ -24,7 +24,9 @@ Every hit, whatever produced it, becomes a `HitEvent` (screen position, force, t
 | `addons/impact_core/` | The shared engine that every game uses |
 | `addons/impact_core/hit_event.gd` | One hit: position, force, time, source |
 | `addons/impact_core/hit_bus.gd` | Global hit channel (autoload `HitBus`) |
-| `addons/impact_core/sources/` | Where hits come from. `tap_hit_source.gd` turns taps and clicks into hits; Wi-Fi and Bluetooth hub sources come later |
+| `addons/impact_core/sources/` | Where hits come from: `tap_hit_source.gd` (taps and clicks) and `udp_hit_source.gd` (the hub over Wi-Fi); Bluetooth later |
+| `docs/hub_protocol.md` | The messages the hub and game send each other |
+| `tools/hub_sim/fake_hub.py` | Pretends to be the hub, for testing without hardware |
 | `addons/impact_core/impact_bridge.gd` | Turns hits into virtual balls flying into the scene, plus a hit flash |
 | `addons/impact_core/breakable.gd` | Add to any physics object to make it shatter into pieces on a hard hit |
 | `assets/targets/` | Models made in Blender (the target and its shards) |
@@ -37,6 +39,18 @@ Every hit, whatever produced it, becomes a `HitEvent` (screen position, force, t
 - **Physics:** Jolt, at 60 ticks per second
 - **Renderer:** Mobile
 - **Orientation:** landscape (the game is projected)
+
+## Connecting the hub
+
+The game listens for John's hub over Wi-Fi (UDP port 4210). The message format is in [`docs/hub_protocol.md`](docs/hub_protocol.md). Taps and clicks always work too.
+
+No hub yet? `tools/hub_sim/fake_hub.py` pretends to be one (plain Python 3, nothing to install). With the game running (F5), open a terminal in the repo folder and run:
+
+```
+python tools/hub_sim/fake_hub.py --target 127.0.0.1 --random 5
+```
+
+The start screen changes to "Hub connected (fake-hub)". The first hit starts the round, and the next ones are throws. To send hits to a phone, use the phone's Wi-Fi address instead of `127.0.0.1`. To type hits yourself, use `--click`.
 
 ## Blender
 
@@ -64,6 +78,7 @@ Two automatic tests, run from the project folder with no window needed:
 
 - `tests/smoke_test.gd`: start a round, hit the bullseye (it shatters, +3), then miss (+0).
 - `tests/round_test.gd`: play a full 10-throw round and check the results screen and saved best score.
+- `tests/udp_test.gd`: pretend to be the hub and check the game connects, answers, and turns hits into throws.
 
 
 ```
