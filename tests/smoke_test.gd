@@ -1,5 +1,5 @@
 extends SceneTree
-## Smoke test: does a hit on the target shatter it and score?
+## Smoke test: start a round, hit the bullseye, then miss.
 ##
 ## Run from the project folder (no window needed):
 ##   godot --headless --path . -s res://tests/smoke_test.gd
@@ -7,37 +7,51 @@ extends SceneTree
 
 const SCENE := "res://games/target_practice/target_practice.tscn"
 
+var game: Node3D
+
 
 func _initialize() -> void:
 	_run.call_deferred()
 
 
 func _run() -> void:
-	var game: Node3D = (load(SCENE) as PackedScene).instantiate()
+	game = (load(SCENE) as PackedScene).instantiate()
 	root.add_child(game)
-	for i in 10:
-		await physics_frame
-
-	var target: RigidBody3D = game.get("_target")
+	await _frames(10)
+	var round: RoundController = game.get("_round")
 	var camera: Camera3D = game.get("_camera")
-	if target == null or camera == null:
-		_finish(false, "scene did not create a target and camera")
+
+	# 1. Any hit on the start screen starts the round (and throws nothing).
+	_hit(Vector2.ZERO)
+	await _frames(5)
+	if round.state != RoundController.State.PLAYING or game.get("_balls_launched") != 0:
+		_finish(false, "first hit should start the round without throwing")
 		return
 
-	# Hit the middle of the target, exactly as a tap would.
-	var point := camera.unproject_position(target.global_position)
+	# 2. Hit the middle of the target: it shatters and scores 3.
+	var target: RigidBody3D = game.get("_target")
+	_hit(camera.unproject_position(target.global_position))
+	await _frames(90)
+	var debris := game.find_child("Debris", true, false)
+	var pieces := debris.get_child_count() if debris != null else 0
+	if pieces < 10 or round.throws != 1 or round.score != 3:
+		_finish(false, "bullseye: pieces=%d throws=%d score=%d" % [pieces, round.throws, round.score])
+		return
+
+	# 3. Throw at the upper-left of the back wall: a miss, worth 0.
+	_hit(camera.unproject_position(Vector3(-3.0, 3.5, -8.8)))  # back wall
+	await _frames(90)
+	var ok := round.throws == 2 and round.score == 3 and round.hits == 1
+	_finish(ok, "pieces=%d throws=%d score=%d hits=%d" % [pieces, round.throws, round.score, round.hits])
+
+
+func _hit(point: Vector2) -> void:
 	root.get_node("HitBus").emit_hit(HitEvent.create(point, 0.7, "test"))
 
-	for i in 90:  # about 1.5 seconds of physics
-		await physics_frame
 
-	var debris := game.find_child("Debris", true, false)
-	var shattered := debris != null
-	var pieces := debris.get_child_count() if shattered else 0
-	var hits: int = game.get("_score")
-	var throws: int = game.get("_throws")
-	var ok := shattered and pieces >= 10 and hits == 1 and throws == 1
-	_finish(ok, "shattered=%s pieces=%d hits=%d throws=%d" % [shattered, pieces, hits, throws])
+func _frames(n: int) -> void:
+	for i in n:
+		await physics_frame
 
 
 func _finish(ok: bool, detail: String) -> void:

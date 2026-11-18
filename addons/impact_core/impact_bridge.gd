@@ -26,6 +26,9 @@ signal ball_launched(ball: RigidBody3D, event: HitEvent)
 ## Show an instant flash where the hit landed, so the game feels responsive
 ## even while the ball is still flying.
 @export var show_hit_flash: bool = true
+## When false, hits are ignored (no ball, no flash), e.g. on a game's
+## start or results screen, where a hit means "start" rather than "throw".
+@export var enabled: bool = true
 
 var _balls: Array[RigidBody3D] = []
 var _flash_layer: CanvasLayer
@@ -54,6 +57,8 @@ func _ready() -> void:
 
 
 func _on_hit(event: HitEvent) -> void:
+	if not enabled:
+		return
 	if camera == null:
 		push_warning("ImpactBridge: no camera set, ignoring hit.")
 		return

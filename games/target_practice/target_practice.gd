@@ -1,29 +1,41 @@
 extends Node3D
-## Target Practice, first test scene (Benchmark 4).
+## Target Practice: throw at the bullseye, 10 throws a round.
 ##
-## Tap or click to throw a virtual ball into the room. Shatter the target
-## (or knock it off its shelf) to score; a new target appears somewhere else.
+## Any hit starts a round. Each throw scores by where it lands: bullseye 3,
+## middle ring 2, outer ring or board edge 1, miss 0. The target shatters on a
+## hit and a new one appears somewhere else on the shelf. After 10 throws the
+## results screen shows the score and the best score; any hit plays again.
+## There is no clock: players walk up to collect the ball between throws.
 ## The scene is built in code so it is easy to read and change.
 
+const GAME_ID := "target_practice"
+const THROWS_PER_ROUND := 10
 const SHELF_Z := -6.0
 const SHELF_TOP := 1.0
 const SHELF_WIDTH := 4.0
 const TARGET_SIZE := Vector3(0.6, 0.6, 0.15)
 const RESPAWN_DELAY := 1.2
+## Ring edges, outside in (meters from the center); match bullseye.gdshader.
+const RING_RADII := [0.27, 0.18, 0.09]
+## A ball that touches a wall, floor or shelf counts as a miss after this
+## long, unless it breaks a target first (a bounce can still hit).
+const MISS_GRACE := 0.4
 ## The target board and its pre-broken shards, made in Blender by
 ## tools/blender/make_target_shards.py.
 const TARGET_MODEL_PATH := "res://assets/targets/target_shards.glb"
 const BULLSEYE_SHADER_PATH := "res://games/target_practice/bullseye.gdshader"
 
 var _camera: Camera3D
+var _bridge: ImpactBridge
+var _round: RoundController
+var _hud: GameHud
 var _target: RigidBody3D
 var _target_knocked := false
-var _score := 0
-var _throws := 0
-var _score_label: Label
-var _ui_layer: CanvasLayer
 var _target_model: PackedScene
 var _bullseye: ShaderMaterial
+var _balls_launched := 0
+## Balls thrown this round that haven't been scored yet (instance ids).
+var _pending_balls: Array[int] = []
 
 
 func _ready() -> void:
@@ -35,48 +47,151 @@ func _ready() -> void:
 	_bullseye.shader = load(BULLSEYE_SHADER_PATH)
 	_build_environment()
 	_build_room()
-	_build_ui()
 
-	var tap_source := TapHitSource.new()
-	add_child(tap_source)
+	_hud = GameHud.new()
+	add_child(_hud)
 
-	var bridge := ImpactBridge.new()
-	bridge.camera = _camera
-	add_child(bridge)
-	bridge.ball_launched.connect(_on_ball_launched)
+	add_child(TapHitSource.new())
+
+	_bridge = ImpactBridge.new()
+	_bridge.camera = _camera
+	_bridge.enabled = false  # Until a round starts.
+	add_child(_bridge)
+	_bridge.ball_launched.connect(_on_ball_launched)
+
+	_round = RoundController.new()
+	_round.game_id = GAME_ID
+	_round.throws_per_round = THROWS_PER_ROUND
+	add_child(_round)
+	_round.round_started.connect(_on_round_started)
+	_round.throw_recorded.connect(_on_throw_recorded)
+	_round.round_finished.connect(_on_round_finished)
 
 	_spawn_target()
+	_show_start_screen()
 
 
 func _physics_process(_delta: float) -> void:
-	# Backup scoring: a soft hit can knock the target over without shattering it.
+	# Backup: a soft hit can knock the target over without shattering it.
 	if not is_instance_valid(_target) or _target_knocked:
 		return
 	var fell := _target.global_position.y < SHELF_TOP - 0.2
 	var tipped := _target.global_transform.basis.y.dot(Vector3.UP) < 0.5
 	if fell or tipped:
-		_score_hit(_target.global_position)
+		_on_target_hit(_target.global_position, 1)
+
+
+# --- Round flow -------------------------------------------------------------
+
+func _show_start_screen() -> void:
+	_hud.set_status("")
+	var best := "\nBest: %d" % _round.best if _round.best > 0 else ""
+	_hud.show_panel("Target Practice",
+		"Throw to start\n%d throws  ·  bullseye 3  ·  rings 2 and 1%s" % [THROWS_PER_ROUND, best])
+
+
+func _on_round_started() -> void:
+	_balls_launched = 0
+	_pending_balls.clear()
+	_hud.hide_panel()
+	_update_status()
+	if not is_instance_valid(_target) or _target_knocked:
+		_spawn_target()
+	_bridge.enabled = true
+
+
+func _on_throw_recorded(_points: int, _throws_left: int) -> void:
+	_update_status()
+
+
+func _on_round_finished(score: int, best: int, is_new_best: bool) -> void:
+	_bridge.enabled = false
+	_hud.set_status("")
+	var best_line := "New best!" if is_new_best else "Best: %d" % best
+	_hud.show_panel("Score %d" % score,
+		"%d of %d hits\n%s\n\nThrow to play again" % [_round.hits, THROWS_PER_ROUND, best_line])
+
+
+func _update_status() -> void:
+	var shown := mini(_round.throws + 1, THROWS_PER_ROUND)
+	_hud.set_status("Throw %d / %d      Score %d" % [shown, THROWS_PER_ROUND, _round.score])
+
+
+# --- Throws -----------------------------------------------------------------
+
+func _on_ball_launched(ball: RigidBody3D, _event: HitEvent) -> void:
+	_balls_launched += 1
+	_pending_balls.append(ball.get_instance_id())
+	ball.body_entered.connect(_on_ball_contact.bind(ball.get_instance_id()))
+	ball.tree_exiting.connect(_on_ball_gone.bind(ball.get_instance_id()))
+	if _balls_launched >= THROWS_PER_ROUND:
+		_bridge.enabled = false  # Last throw of the round is in the air.
+
+
+func _on_ball_contact(body: Node, ball_id: int) -> void:
+	if body is StaticBody3D and ball_id in _pending_balls:
+		get_tree().create_timer(MISS_GRACE).timeout.connect(_score_miss.bind(ball_id))
+
+
+func _on_ball_gone(ball_id: int) -> void:
+	if is_inside_tree() and not is_queued_for_deletion():
+		_score_miss(ball_id)
+
+
+func _score_miss(ball_id: int) -> void:
+	if ball_id not in _pending_balls:
+		return  # Already scored (it hit something).
+	_pending_balls.erase(ball_id)
+	var ball := instance_from_id(ball_id) as Node3D
+	if ball != null and not _camera.is_position_behind(ball.global_position):
+		_hud.show_pop("Miss", _camera.unproject_position(ball.global_position), Color(0.85, 0.88, 0.95))
+	_round.record_throw(0)
 
 
 func _on_target_broken(hit_point: Vector3) -> void:
-	_target = null  # The Breakable removes the target itself.
-	_score_hit(hit_point)
+	# The target still exists at this moment; it's removed right after.
+	_on_target_hit(hit_point, _ring_points(_target.to_local(hit_point)))
+	_target = null
 
 
-func _score_hit(world_point: Vector3) -> void:
+func _on_target_hit(world_point: Vector3, points: int) -> void:
 	if _target_knocked:
 		return
 	_target_knocked = true
-	_score += 1
-	_update_score()
-	_show_score_pop(world_point)
+	var ball_id := _nearest_pending_ball(world_point)
+	if ball_id != 0:
+		_pending_balls.erase(ball_id)
+		if not _camera.is_position_behind(world_point):
+			_hud.show_pop("+%d" % points, _camera.unproject_position(world_point))
+		_round.record_throw(points)
 	get_tree().create_timer(RESPAWN_DELAY).timeout.connect(_spawn_target)
 
 
-func _on_ball_launched(_ball: RigidBody3D, _event: HitEvent) -> void:
-	_throws += 1
-	_update_score()
+## Points for a hit at a spot on the target's face (target-local position).
+func _ring_points(local_pos: Vector3) -> int:
+	var r := Vector2(local_pos.x, local_pos.y).length()
+	if r <= RING_RADII[2]:
+		return 3
+	if r <= RING_RADII[1]:
+		return 2
+	return 1
 
+
+func _nearest_pending_ball(world_point: Vector3) -> int:
+	var best_id := 0
+	var best_dist := INF
+	for id in _pending_balls:
+		var ball := instance_from_id(id) as Node3D
+		if ball == null:
+			continue
+		var d := ball.global_position.distance_to(world_point)
+		if d < best_dist:
+			best_dist = d
+			best_id = id
+	return best_id
+
+
+# --- Building the scene -----------------------------------------------------
 
 func _spawn_target() -> void:
 	if is_instance_valid(_target):
@@ -182,43 +297,6 @@ func _add_static_box(pos: Vector3, size: Vector3, color: Color) -> void:
 	body.add_child(mesh)
 	body.position = pos
 	add_child(body)
-
-
-func _build_ui() -> void:
-	var layer := CanvasLayer.new()
-	add_child(layer)
-	_ui_layer = layer
-	_score_label = Label.new()
-	_score_label.position = Vector2(24.0, 16.0)
-	_score_label.add_theme_font_size_override("font_size", 32)
-	layer.add_child(_score_label)
-	var hint := Label.new()
-	hint.text = "Tap or click to throw"
-	hint.position = Vector2(24.0, 60.0)
-	hint.add_theme_font_size_override("font_size", 20)
-	hint.modulate = Color(1.0, 1.0, 1.0, 0.7)
-	layer.add_child(hint)
-	_update_score()
-
-
-## A "+1" that floats up from where the target was hit.
-func _show_score_pop(world_point: Vector3) -> void:
-	if _camera.is_position_behind(world_point):
-		return
-	var pop := Label.new()
-	pop.text = "+1"
-	pop.add_theme_font_size_override("font_size", 40)
-	pop.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
-	pop.position = _camera.unproject_position(world_point) - Vector2(20.0, 40.0)
-	_ui_layer.add_child(pop)
-	var tween := pop.create_tween().set_parallel(true)
-	tween.tween_property(pop, "position:y", pop.position.y - 60.0, 0.7)
-	tween.tween_property(pop, "modulate:a", 0.0, 0.7).set_delay(0.2)
-	tween.chain().tween_callback(pop.queue_free)
-
-
-func _update_score() -> void:
-	_score_label.text = "Hits: %d   Throws: %d" % [_score, _throws]
 
 
 func _material(color: Color) -> StandardMaterial3D:
