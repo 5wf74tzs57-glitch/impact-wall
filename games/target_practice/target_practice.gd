@@ -29,6 +29,7 @@ var _camera: Camera3D
 var _bridge: ImpactBridge
 var _round: RoundController
 var _hud: GameHud
+var _hub: UdpHitSource
 var _target: RigidBody3D
 var _target_knocked := false
 var _target_model: PackedScene
@@ -51,7 +52,10 @@ func _ready() -> void:
 	_hud = GameHud.new()
 	add_child(_hud)
 
-	add_child(TapHitSource.new())
+	add_child(TapHitSource.new())  # Taps and clicks always work too.
+	_hub = UdpHitSource.new()  # The real hub, over Wi-Fi (docs/hub_protocol.md).
+	add_child(_hub)
+	_hub.hub_connected.connect(_on_hub_connected)
 
 	_bridge = ImpactBridge.new()
 	_bridge.camera = _camera
@@ -87,7 +91,19 @@ func _show_start_screen() -> void:
 	_hud.set_status("")
 	var best := "\nBest: %d" % _round.best if _round.best > 0 else ""
 	_hud.show_panel("Target Practice",
-		"Throw to start\n%d throws  ·  bullseye 3  ·  rings 2 and 1%s" % [THROWS_PER_ROUND, best])
+		"Throw to start\n%d throws  ·  bullseye 3  ·  rings 2 and 1%s\n\n%s"
+		% [THROWS_PER_ROUND, best, _hub_status()])
+
+
+func _hub_status() -> String:
+	if _hub.connected:
+		return "Hub connected (%s)" % _hub.hub_name
+	return "No hub found: tap or click to play"
+
+
+func _on_hub_connected(_hub_name: String) -> void:
+	if _round.state == RoundController.State.READY:
+		_show_start_screen()  # Refresh the hub line.
 
 
 func _on_round_started() -> void:
