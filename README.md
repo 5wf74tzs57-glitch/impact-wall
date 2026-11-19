@@ -52,6 +52,8 @@ python tools/hub_sim/fake_hub.py --target 127.0.0.1 --random 5
 
 The start screen changes to "Hub connected (fake-hub)". The first hit starts the round, and the next ones are throws. To send hits to a phone, use the phone's Wi-Fi address instead of `127.0.0.1`. To type hits yourself, use `--click`.
 
+Real hub not connecting? Press **H** in the game for hub info, and follow [`docs/hub_troubleshooting.md`](docs/hub_troubleshooting.md). `tools/hub_sim/listen.py` prints everything that arrives on the hub port.
+
 ## Blender
 
 ### Helper panel (for anyone, beginners welcome)
