@@ -17,6 +17,9 @@ const PROTOCOL_VERSION := 1
 @export var raw_log_path: String = "user://hit_log.csv"
 ## Force used when a hit message doesn't include one.
 @export_range(0.0, 1.0) var default_force: float = 0.7
+## Optional: the hub's IP address (e.g. "192.168.1.50"). When set, the game
+## keeps saying "connect" to it, for routers that block the hub's broadcast.
+@export var hub_address: String = ""
 
 ## Optional: a function (wall_pos: Vector2) -> Vector2 that turns a wall
 ## position (0..1, origin bottom-left) into a screen position. Calibration
@@ -27,11 +30,20 @@ var connected := false
 var hub_name := ""
 var last_message_ms := 0
 
+# What has arrived, for the hub info overlay (press H) and troubleshooting.
+var listening := false
+var packets_received := 0
+var last_packet_from := ""
+var last_packet_text := ""
+## Why the last message wasn't understood, in plain words ("" = no problem).
+var last_problem := ""
+
 var _udp := PacketPeerUDP.new()
 var _hub_ip := ""
 var _hub_port := 0
 var _recent_ids: Array[int] = []
 var _hit_bus: Node
+var _probe_timer := 0.0
 
 
 func _ready() -> void:
@@ -39,7 +51,9 @@ func _ready() -> void:
 	_hit_bus = get_node("/root/HitBus")
 	_udp.set_broadcast_enabled(true)
 	var err := _udp.bind(port, "*")
+	listening = err == OK
 	if err != OK:
+		last_problem = "Can't listen on port %d (another copy of the game running?)" % port
 		push_warning("UdpHitSource: can't listen on port %d (error %d). Is another copy of the game running?" % [port, err])
 
 
@@ -47,22 +61,45 @@ func _exit_tree() -> void:
 	_udp.close()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_probe_hub_address(delta)
 	while _udp.get_available_packet_count() > 0:
 		var packet := _udp.get_packet()
 		var from_ip := _udp.get_packet_ip()
 		var from_port := _udp.get_packet_port()
-		var message: Variant = JSON.parse_string(packet.get_string_from_utf8())
+		var text := packet.get_string_from_utf8()
+		packets_received += 1
+		last_packet_from = "%s:%d" % [from_ip, from_port]
+		last_packet_text = text.left(200)
+		var message: Variant = JSON.parse_string(text)
 		if message is Dictionary:
 			_handle(message, from_ip, from_port)
+		else:
+			last_problem = "Last packet wasn't JSON (see docs/hub_protocol.md for the format)"
+
+
+func _probe_hub_address(delta: float) -> void:
+	if hub_address == "" or connected:
+		return
+	_probe_timer -= delta
+	if _probe_timer > 0.0:
+		return
+	_probe_timer = 2.0
+	_udp.set_dest_address(hub_address, port)
+	_udp.put_packet(JSON.stringify({"v": PROTOCOL_VERSION, "type": "connect"}).to_utf8_buffer())
 
 
 func _handle(message: Dictionary, from_ip: String, from_port: int) -> void:
-	if int(message.get("v", 0)) != PROTOCOL_VERSION:
-		push_warning("UdpHitSource: ignoring message with protocol version %s" % str(message.get("v")))
+	last_problem = ""
+	if not message.has("v"):
+		last_problem = "Message had no \"v\" field; treated it as version 1"
+	elif int(message.get("v")) != PROTOCOL_VERSION:
+		last_problem = "Message is protocol version %s; the game expects %d" % [str(message.get("v")), PROTOCOL_VERSION]
+		push_warning("UdpHitSource: " + last_problem)
 		return
 	last_message_ms = Time.get_ticks_msec()
-	match str(message.get("type", "")):
+	var type := str(message.get("type", ""))
+	match type:
 		"hello":
 			_hub_ip = from_ip
 			_hub_port = from_port
@@ -75,6 +112,8 @@ func _handle(message: Dictionary, from_ip: String, from_port: int) -> void:
 			_on_hit_message(message)
 		"raw":
 			_log_raw(message)
+		_:
+			last_problem = "Unknown message type \"%s\" (expected hello, hit or raw)" % type
 
 
 func _on_hit_message(message: Dictionary) -> void:

@@ -56,6 +56,9 @@ func _ready() -> void:
 	_hub = UdpHitSource.new()  # The real hub, over Wi-Fi (docs/hub_protocol.md).
 	add_child(_hub)
 	_hub.hub_connected.connect(_on_hub_connected)
+	var hub_info := HubOverlay.new()  # Press H to see what the hub is sending.
+	hub_info.source = _hub
+	add_child(hub_info)
 
 	_bridge = ImpactBridge.new()
 	_bridge.camera = _camera
@@ -98,7 +101,7 @@ func _show_start_screen() -> void:
 func _hub_status() -> String:
 	if _hub.connected:
 		return "Hub connected (%s)" % _hub.hub_name
-	return "No hub found: tap or click to play"
+	return "No hub found: tap or click to play  ·  H = hub info"
 
 
 func _on_hub_connected(_hub_name: String) -> void:

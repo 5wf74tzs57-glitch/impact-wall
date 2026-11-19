@@ -2,6 +2,8 @@
 
 How the ESP32 hub tells the game about hits over Wi-Fi. The game side is built and tested against this (`addons/impact_core/sources/udp_hit_source.gd`). `tools/hub_sim/fake_hub.py` is a working reference sender in Python. Anything here can change: tell Tim/Claude and both sides get updated.
 
+Not connecting? See [`hub_troubleshooting.md`](hub_troubleshooting.md).
+
 ## Transport
 
 - **UDP** on the local Wi-Fi network, **port 4210**, both directions.
