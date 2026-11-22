@@ -40,6 +40,29 @@ Every hit, whatever produced it, becomes a `HitEvent` (screen position, force, t
 - **Renderer:** Mobile
 - **Orientation:** landscape (the game is projected)
 
+## Building for iPhone
+
+iPhone builds need a Mac with **Xcode** (free, from the App Store; install the iOS platform when it asks) and an Apple ID. A free Apple ID works for testing on your own phone.
+
+### One-time setup
+1. **Xcode → Settings → Apple Accounts**: sign in with your Apple ID, click your name, then **Manage Certificates → + → Apple Development**.
+2. **Your Team ID**: open **Keychain Access → login → My Certificates**, double-click **Apple Development: …**, and copy the **Organizational Unit** (a 10-character code). Not the code in brackets in the certificate's name.
+3. **Xcode → Settings → Locations → Command Line Tools**: choose **Xcode**. If this is left on "Command Line Tools", Godot's export fails with *"xcodebuild requires Xcode"*.
+4. **iPhone**: plug it in, unlock it, tap **Trust**, then **Settings → Privacy & Security → Developer Mode → On** (it restarts).
+5. **Godot**: **Editor → Manage Export Templates → Download and Install** (the iOS templates are enough).
+
+### Each build
+1. Pull the latest in GitHub Desktop, then in Godot **Project → Reload Current Project**.
+2. **Project → Export… → iOS** (the preset is saved in `export_presets.cfg`; set **App Store Team ID** to your own Team ID). Click **Export Project…** and save into `builds/ios` (git ignores this folder).
+   - If Godot then shows *"Xcode Build: Failed to run xcodebuild"*, carry on anyway: the Xcode project was still created.
+3. Open `builds/ios/Impact Wall.xcodeproj` in Xcode.
+4. At the top, pick **your iPhone**, not a Simulator. (A Simulator gives *"Undefined symbol: _main"*, because Godot only includes the engine for real iPhones.)
+5. **Signing & Capabilities**: tick **Automatically manage signing**, Team = your **(Personal Team)**.
+6. Press **▶ Run** (⌘R). **Build** (⌘B) only builds; it doesn't install.
+7. First time only: if it says the developer isn't trusted, on the iPhone go to **Settings → General → VPN & Device Management**, tap your Apple ID and **Trust**, then open **Impact Wall**.
+
+With a free Apple ID the app stops opening after **7 days**. Run it from Xcode again to reinstall. A paid developer account ($99/year) removes that limit and allows TestFlight builds for other people.
+
 ## Connecting the hub
 
 The game listens for John's hub over Wi-Fi (UDP port 4210). The message format is in [`docs/hub_protocol.md`](docs/hub_protocol.md). Taps and clicks always work too.
