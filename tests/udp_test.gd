@@ -14,6 +14,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	root.size = Vector2i(1280, 720)  # The real 16:9 screen shape (headless defaults to square).
 	var game: Node3D = (load(SCENE) as PackedScene).instantiate()
 	root.add_child(game)
 	await _frames(10)
