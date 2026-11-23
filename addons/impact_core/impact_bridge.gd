@@ -7,6 +7,9 @@ extends Node3D
 ## the scene, faster for harder hits. Target practice, tower games and sports
 ## games all start from this.
 
+## Group every thrown ball belongs to.
+const BALL_GROUP := "impact_ball"
+
 ## Emitted right after a ball is launched for a hit.
 signal ball_launched(ball: RigidBody3D, event: HitEvent)
 
@@ -53,7 +56,8 @@ func _ready() -> void:
 	_flash_layer.layer = 10
 	add_child(_flash_layer)
 
-	HitBus.hit.connect(_on_hit)
+	# Looked up at run time so test scripts can load this class (see CLAUDE.md).
+	get_node("/root/HitBus").hit.connect(_on_hit)
 
 
 func _on_hit(event: HitEvent) -> void:
@@ -73,6 +77,7 @@ func _launch_ball(event: HitEvent) -> void:
 
 	var ball := RigidBody3D.new()
 	ball.mass = ball_mass
+	ball.add_to_group(BALL_GROUP)  # So targets can tell a thrown ball from debris.
 	ball.continuous_cd = true  # Fast balls must not pass through thin targets.
 	# Fly in a straight line until the first contact, so the ball strikes
 	# exactly what was under the hit point; then gravity takes over.

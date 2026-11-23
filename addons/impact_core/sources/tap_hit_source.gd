@@ -16,5 +16,5 @@ func _unhandled_input(input_event: InputEvent) -> void:
 	if touch == null or not touch.pressed:
 		return
 	var force := tap_force + randf_range(-force_jitter, force_jitter)
-	HitBus.emit_hit(HitEvent.create(touch.position, force, "tap"))
+	get_node("/root/HitBus").emit_hit(HitEvent.create(touch.position, force, "tap"))
 	get_viewport().set_input_as_handled()

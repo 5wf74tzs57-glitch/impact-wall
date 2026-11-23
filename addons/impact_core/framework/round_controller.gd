@@ -54,12 +54,13 @@ func start() -> void:
 	round_started.emit()
 
 
-## Record one throw. Points of 0 means a miss.
+## Record one throw. 0 means a miss; negative is a penalty (the score never
+## goes below 0).
 func record_throw(points: int) -> void:
 	if state != State.PLAYING:
 		return
 	throws += 1
-	score += points
+	score = maxi(score + points, 0)
 	if points > 0:
 		hits += 1
 	throw_recorded.emit(points, throws_left())
