@@ -38,6 +38,9 @@ signal broken(hit_point: Vector3)
 @export_range(0.0, 1.0) var carry_through: float = 0.25
 ## Seconds before the pieces are gone (they shrink over the last third).
 @export var piece_lifetime: float = 2.0
+## Where the flying pieces are added. Defaults to the object's parent; set it
+## when that parent may disappear soon after the hit (e.g. a moving rig).
+var debris_parent: Node
 ## Color for every piece, unless `piece_color` (below) is set.
 @export var default_color: Color = Color(0.9, 0.9, 0.9)
 
@@ -86,6 +89,9 @@ func _physics_process(_delta: float) -> void:
 	# (Comparing the ball's speed doesn't work: by the time a collision is
 	# reported, the ball has already bounced and slowed down.)
 	if _is_broken or _body == null:
+		return
+	if _body.freeze:
+		_check_ball_contacts()  # Moved by script, so it can't be "shoved".
 		return
 	var shove := (_body.linear_velocity - _last_velocity).length() * _body.mass
 	_last_velocity = _body.linear_velocity
@@ -136,6 +142,19 @@ static func _transform_to_root(node: Node3D, root: Node) -> Transform3D:
 	return xform
 
 
+## For targets moved by script (frozen bodies): any thrown ball touching it
+## breaks it.
+func _check_ball_contacts() -> void:
+	var state := PhysicsServer3D.body_get_direct_state(_body.get_rid())
+	if state == null:
+		return
+	for i in state.get_contact_count():
+		var other := state.get_contact_collider_object(i) as RigidBody3D
+		if other != null and other.is_in_group(ImpactBridge.BALL_GROUP):
+			shatter(state.get_contact_collider_position(i), other.linear_velocity)
+			return
+
+
 func _prepare_grid_pieces() -> void:
 	var cell := Vector3(size.x / grid.x, size.y / grid.y, size.z / grid.z)
 	var materials := {}
@@ -166,7 +185,7 @@ func _prepare_grid_pieces() -> void:
 func _spawn_pieces(hit_point: Vector3, hit_velocity: Vector3) -> void:
 	if not is_instance_valid(_body):
 		return
-	var world := _body.get_parent()
+	var world := debris_parent if is_instance_valid(debris_parent) else _body.get_parent()
 	var body_xform := _body.global_transform
 	var body_velocity := _body.linear_velocity
 	var piece_mass := _body.mass / maxf(_pieces.size(), 1.0)

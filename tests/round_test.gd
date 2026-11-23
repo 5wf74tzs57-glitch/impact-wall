@@ -13,6 +13,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var game: Node3D = (load(SCENE) as PackedScene).instantiate()
+	game.set("auto_spawn", false)
 	root.add_child(game)
 	await _frames(10)
 	var round: RoundController = game.get("_round")
@@ -21,16 +22,16 @@ func _run() -> void:
 
 	_hit(Vector2.ZERO)  # start
 	await _frames(5)
+	var xs := [-2.9, -1.05, 1.45, 2.9]
 	for i in round.throws_per_round:
 		if i % 2 == 0:
-			# Even throws: wait for a target, then hit its middle.
-			while not is_instance_valid(game.get("_target")) or game.get("_target_knocked"):
-				await _frames(5)
-			var target: RigidBody3D = game.get("_target")
-			_hit(camera.unproject_position(target.global_position))
+			# Even throws: a pop-up rises, hit its middle (+3).
+			var target: RangeTarget = game.spawn_target(RangeTarget.Kind.POP_UP, false, xs[(i / 2) % xs.size()])
+			await _frames(40)
+			_hit(camera.unproject_position(target.body.global_position))
 		else:
-			_hit(camera.unproject_position(Vector3(-3.0, 3.5, -8.8)))  # back wall  # odd throws: miss
-		await _frames(100)
+			_hit(camera.unproject_position(Vector3(-1.0, 0.0, -3.0)))  # odd throws: miss
+		await _frames(80)
 
 	var cfg := ConfigFile.new()
 	cfg.load(RoundController.SAVE_PATH)

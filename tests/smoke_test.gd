@@ -1,5 +1,6 @@
 extends SceneTree
-## Smoke test: start a round, hit the bullseye, then miss.
+## Smoke test: on the outdoor range, start a round, hit a pop-up's bullseye
+## (+3), hit a friendly (-3), then miss (0).
 ##
 ## Run from the project folder (no window needed):
 ##   godot --headless --path . -s res://tests/smoke_test.gd
@@ -16,6 +17,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	game = (load(SCENE) as PackedScene).instantiate()
+	game.set("auto_spawn", false)  # Only the targets this test makes.
 	root.add_child(game)
 	await _frames(10)
 	var round: RoundController = game.get("_round")
@@ -28,20 +30,30 @@ func _run() -> void:
 		_finish(false, "first hit should start the round without throwing")
 		return
 
-	# 2. Hit the middle of the target: it shatters and scores 3.
-	var target: RigidBody3D = game.get("_target")
-	_hit(camera.unproject_position(target.global_position))
-	await _frames(90)
+	# 2. A pop-up rises; hit its middle: it shatters and scores 3.
+	var target: RangeTarget = game.spawn_target(RangeTarget.Kind.POP_UP, false, -1.05)
+	await _frames(40)
+	_hit(camera.unproject_position(target.body.global_position))
+	await _frames(60)
 	var debris := game.find_child("Debris", true, false)
 	var pieces := debris.get_child_count() if debris != null else 0
 	if pieces < 10 or round.throws != 1 or round.score != 3:
 		_finish(false, "bullseye: pieces=%d throws=%d score=%d" % [pieces, round.throws, round.score])
 		return
 
-	# 3. Throw at the upper-left of the back wall: a miss, worth 0.
-	_hit(camera.unproject_position(Vector3(-3.0, 3.5, -8.8)))  # back wall
+	# 3. A friendly pops up; hitting it costs 3.
+	var friendly: RangeTarget = game.spawn_target(RangeTarget.Kind.POP_UP, true, 1.45)
+	await _frames(40)
+	_hit(camera.unproject_position(friendly.body.global_position))
+	await _frames(60)
+	if round.throws != 2 or round.score != 0:
+		_finish(false, "friendly: throws=%d score=%d" % [round.throws, round.score])
+		return
+
+	# 4. Throw at the grass in front: a miss, worth 0.
+	_hit(camera.unproject_position(Vector3(-1.0, 0.0, -3.0)))
 	await _frames(90)
-	var ok := round.throws == 2 and round.score == 3 and round.hits == 1
+	var ok := round.throws == 3 and round.score == 0 and round.hits == 1
 	_finish(ok, "pieces=%d throws=%d score=%d hits=%d" % [pieces, round.throws, round.score, round.hits])
 
 
