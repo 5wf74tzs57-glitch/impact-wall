@@ -7,7 +7,7 @@ Games for the Impact Wall kit. An ESP32 hub with piezo sensors and microphones d
 1. Install **Godot 4.7.2** (standard version, not .NET) from https://godotengine.org/download. Use this exact version so the project opens the same for everyone.
 2. Clone this repo with GitHub Desktop (**File → Clone repository**).
 3. In Godot's Project Manager, click **Import**, pick this folder's `project.godot`, then **Import & Edit**.
-4. Press **F5** (or the ▶ button) to run. Click to start, then throw 10 times at targets that pop up, slide along a rail, or peek out from behind hay bales. Bullseye 3, rings 2 and 1, +1 on a moving target; hitting a smiley friendly costs 3. Click again on the results screen to play again.
+4. Press **F5** (or the ▶ button) to run. Click to start, then throw 10 times at red person-shaped targets at four distances: pop-ups, movers sliding along a far rail, walkers coming toward or going away from you, and targets peeking out from behind hay bales. Bullseye 5, rings 3 and 2, anywhere else 1, +1 on a moving target, then x2 for mid-range and x3 for far targets. Hitting a blue smiley friendly costs 5. Click again on the results screen to play again.
 
 On a phone, a tap does the same as a click.
 
@@ -32,7 +32,7 @@ Every hit, whatever produced it, becomes a `HitEvent` (screen position, force, t
 | `assets/targets/` | Models made in Blender (the target and its shards) |
 | `tools/blender/` | Blender helper panel and the script that makes the shards |
 | `addons/impact_core/framework/` | Game framework: `RoundController` (rounds of throws, scores, best score saved on the device) and `GameHud` (start/results screens, status line, score pops) |
-| `games/target_practice/` | Target Practice on an outdoor range: `range_target.gd` (pop-up, mover, peek-from-cover; friendly or not), `target_practice.gd` (the range, spawning and scoring), `bullseye.gdshader` / `friendly.gdshader` (board faces) |
+| `games/target_practice/` | Target Practice on an outdoor range: `range_target.gd` (pop-up, mover, walker, peek-from-cover; friendly or not), `target_practice.gd` (the range, the forest, spawning without overlaps, scoring), `person_target.gdshader` / `friendly.gdshader` (target faces) |
 
 ## Settings worth knowing
 
@@ -89,7 +89,7 @@ To install it (once per computer):
 4. In the 3D view, press **N** to open the sidebar and click the **Impact Wall** tab.
 
 ### Rebuilding the target's shards
-`assets/targets/target_shards.glb` (the board plus 24 pre-broken shards) is made by a script, so it can be rebuilt any time, for example with more pieces:
+`assets/targets/person_target.glb` (the person silhouette plus 24 pre-broken shards, made by `tools/blender/make_person_target.py`) and the older square `assets/targets/target_shards.glb` are made by scripts, so it can be rebuilt any time, for example with more pieces:
 
 ```
 blender --background --python tools/blender/make_target_shards.py -- assets/targets/target_shards.glb
@@ -101,7 +101,8 @@ Change `PIECES`, `SEED` (a different break pattern) or `CENTER_BIAS` (more small
 
 Two automatic tests, run from the project folder with no window needed:
 
-- `tests/smoke_test.gd`: start a round, hit a pop-up's bullseye (it shatters, +3), hit a friendly (-3), then miss (+0).
+- `tests/smoke_test.gd`: start a round, hit a near bullseye (+5), a friendly (-5), a far bullseye (5 x3 = +15), then miss (+0).
+- `tests/spawn_test.gd`: let targets appear on their own (sped up) and check none ever overlap on screen or hide behind a bale; then hit a walker.
 - `tests/round_test.gd`: play a full 10-throw round and check the results screen and saved best score.
 - `tests/udp_test.gd`: pretend to be the hub and check the game connects, answers, and turns hits into throws.
 
