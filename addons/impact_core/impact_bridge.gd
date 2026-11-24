@@ -9,6 +9,9 @@ extends Node3D
 
 ## Group every thrown ball belongs to.
 const BALL_GROUP := "impact_ball"
+## Each thrown ball carries its straight-line path as metadata, [start,
+## direction], so whatever it hits can work out exactly where.
+const PATH_META := "impact_path"
 
 ## Emitted right after a ball is launched for a hit.
 signal ball_launched(ball: RigidBody3D, event: HitEvent)
@@ -96,6 +99,7 @@ func _launch_ball(event: HitEvent) -> void:
 	add_child(ball)
 	ball.global_position = origin + direction * (camera.near + ball_radius * 2.0)
 	ball.linear_velocity = direction * lerpf(min_speed, max_speed, event.force)
+	ball.set_meta(PATH_META, [ball.global_position, direction])
 
 	_balls.append(ball)
 	while _balls.size() > max_balls:

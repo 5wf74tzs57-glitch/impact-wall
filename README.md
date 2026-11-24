@@ -7,7 +7,7 @@ Games for the Impact Wall kit. An ESP32 hub with piezo sensors and microphones d
 1. Install **Godot 4.7.2** (standard version, not .NET) from https://godotengine.org/download. Use this exact version so the project opens the same for everyone.
 2. Clone this repo with GitHub Desktop (**File → Clone repository**).
 3. In Godot's Project Manager, click **Import**, pick this folder's `project.godot`, then **Import & Edit**.
-4. Press **F5** (or the ▶ button) to run. Click to start, then throw 10 times at red person-shaped targets at four distances: pop-ups, movers sliding along a far rail, walkers coming toward or going away from you, and targets peeking out from behind hay bales. Bullseye 5, rings 3 and 2, anywhere else 1, +1 on a moving target, then x2 for mid-range and x3 for far targets. Hitting a blue smiley friendly costs 5. Click again on the results screen to play again.
+4. Press **F5** (or the ▶ button) to run. Click to start, then throw 10 times at Tim's cartoon targets at four distances: pop-ups, movers sliding along a far rail, walkers coming toward or going away from you, and targets peeking out from behind hay bales. You score the number printed where you hit: chest rings 5 to 1, head bullseye 5 to 3 (rest of the head 2); +1 on a moving target, then x2 for mid-range and x3 for far targets. A head hit knocks off just the head, an outer-side hit breaks off that side, and a hit on the inner rings shatters the whole target. Hitting a blue smiley friendly costs 5. Click again on the results screen to play again.
 
 On a phone, a tap does the same as a click.
 
@@ -88,7 +88,16 @@ To install it (once per computer):
 3. Choose `tools/blender/impact_wall_tools.py` from this repo, and make sure **Impact Wall Tools** is ticked.
 4. In the 3D view, press **N** to open the sidebar and click the **Impact Wall** tab.
 
-### Rebuilding the target's shards
+### Tim's cartoon target
+The game's target is designed in `assets/source/targets.blend` (Godot ignores that folder) as four convex parts, Head, Left, Center and Right, exported to `assets/targets/cartoon_target.glb`. After changing it, rebuild the game's copy with its pre-broken shards (and the artwork reduced to 1024) with:
+
+```
+blender --background --python tools/blender/make_cartoon_shards.py -- assets/targets/cartoon_target.glb assets/targets/cartoon_target_shards.glb
+```
+
+If the rings or head move in the artwork, update the matching numbers at the top of `games/target_practice/range_target.gd`, then run `tests/target_alignment_test.gd`. It checks the hit area against the drawn shape and that every ring scores its printed number.
+
+### Rebuilding the old square target's shards
 `assets/targets/person_target.glb` (the person silhouette plus 24 pre-broken shards, made by `tools/blender/make_person_target.py`) and the older square `assets/targets/target_shards.glb` are made by scripts, so it can be rebuilt any time, for example with more pieces:
 
 ```
@@ -102,6 +111,7 @@ Change `PIECES`, `SEED` (a different break pattern) or `CENTER_BIAS` (more small
 Two automatic tests, run from the project folder with no window needed:
 
 - `tests/smoke_test.gd`: start a round, hit a near bullseye (+5), a friendly (-5), a far bullseye (5 x3 = +15), then miss (+0).
+- `tests/target_alignment_test.gd`: the hit area matches the drawn target, and throws at every ring score the printed number and break the right part.
 - `tests/spawn_test.gd`: let targets appear on their own (sped up) and check none ever overlap on screen or hide behind a bale; then hit a walker.
 - `tests/round_test.gd`: play a full 10-throw round and check the results screen and saved best score.
 - `tests/udp_test.gd`: pretend to be the hub and check the game connects, answers, and turns hits into throws.
