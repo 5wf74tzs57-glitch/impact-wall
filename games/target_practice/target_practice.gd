@@ -6,18 +6,17 @@ extends Node3D
 ## toward or away from you, and targets that peek out from behind hay bales.
 ## Blue ones with a smiley face are friendlies: hitting one costs points.
 ##
-## Scoring: bullseye 5, rings 3 and 2, anywhere else on the target 1; +1 on a
-## moving target; then x2 for mid-range and x3 for far targets. Friendly -5,
-## miss 0 (the score never goes below 0).
+## Scoring follows the numbers printed on the target: chest rings 5, 4, 3, 2,
+## 1 (anywhere else on the body 1); the small head bullseye 5, 4, 3 (rest of
+## the head 2). Then +1 on a moving target, x2 for mid-range and x3 for far
+## targets. Friendly -5, miss 0 (the score never goes below 0).
+## Where the ball lands also decides what breaks (see RangeTarget).
 ## There's no round clock: players walk up to collect the ball between throws,
 ## and new targets keep coming meanwhile.
 ## The scene is built in code so it is easy to read and change.
 
 const GAME_ID := "target_practice"
 const THROWS_PER_ROUND := 10
-## Points for the bullseye and each ring around it, then the rest of the target.
-const ZONE_POINTS := [5, 3, 2]
-const BODY_POINTS := 1
 const MOVING_BONUS := 1
 const FRIENDLY_PENALTY := -5
 ## Distance multipliers: hits closer than the first distance x1, closer than
@@ -53,9 +52,12 @@ const DEPTH_RANGE := Vector2(-9.0, -17.0)  # Walkers go between these distances.
 const MAX_TARGETS := 4
 const SPAWN_GAP := Vector2(0.8, 2.0)  # Seconds between new targets (min, max).
 const FRIENDLY_CHANCE := 0.25
+## A kind of target that hasn't appeared for this many seconds gets the next
+## free spot first.
+const STARVED_AFTER := 10.0
 
-const TARGET_MODEL_PATH := "res://assets/targets/person_target.glb"
-const TARGET_SHADER_PATH := "res://games/target_practice/person_target.gdshader"
+## Tim's cartoon target with pre-broken parts (tools/blender/make_cartoon_shards.py).
+const TARGET_MODEL_PATH := "res://assets/targets/cartoon_target_shards.glb"
 const FRIENDLY_SHADER_PATH := "res://games/target_practice/friendly.gdshader"
 
 ## Set false to stop targets appearing on their own (used by tests).
@@ -67,7 +69,6 @@ var _round: RoundController
 var _hud: GameHud
 var _hub: UdpHitSource
 var _target_model: PackedScene
-var _target_face: ShaderMaterial
 var _friendly_face: ShaderMaterial
 var _targets: Array[RangeTarget] = []
 ## The screen area each live target covers over its whole life.
@@ -75,6 +76,9 @@ var _footprints := {}
 ## The screen area each hay bale covers (only peek targets may hide there).
 var _cover_areas: Array[Rect2] = []
 var _spawn_timer := 0.5
+## When each kind of target last appeared (game seconds), for fair turns.
+var _last_spawned := {}
+var _game_time := 0.0
 var _friendlies_hit := 0
 var _balls_launched := 0
 ## Balls thrown this round that haven't been scored yet (instance ids).
@@ -87,7 +91,6 @@ func _ready() -> void:
 	_target_model = load(TARGET_MODEL_PATH)
 	if _target_model == null:
 		push_error("Target model isn't imported yet. In Godot: Project > Reload Current Project.")
-	_target_face = _shader_material(TARGET_SHADER_PATH)
 	_friendly_face = _shader_material(FRIENDLY_SHADER_PATH)
 	_build_environment()
 	_build_range()
@@ -122,6 +125,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	_game_time += delta
 	if not auto_spawn or _target_model == null:
 		return
 	_spawn_timer -= delta
@@ -144,7 +148,7 @@ func _show_start_screen() -> void:
 	_hud.set_status("")
 	var best := "\nBest: %d" % _round.best if _round.best > 0 else ""
 	_hud.show_panel("Target Range",
-		("Throw to start  ·  %d throws\nBullseye 5 · rings 3 and 2 · moving +1 · far targets x2 and x3\n"
+		("Throw to start  ·  %d throws\nScore the number you hit · moving +1 · far targets x2 and x3\n"
 		+ "Don't hit the blue smiley friendlies: %d%s\n\n%s")
 		% [THROWS_PER_ROUND, FRIENDLY_PENALTY, best, _hub_status()])
 
@@ -193,21 +197,46 @@ func _update_status() -> void:
 # --- Targets ----------------------------------------------------------------
 
 func _spawn_random_target() -> void:
-	# Try a few random targets and keep the first that doesn't overlap any
-	# target already on the range, anywhere along its path.
+	# Try a few targets and keep the first that doesn't overlap any target
+	# already on the range, anywhere along its path. A kind that hasn't had a
+	# turn for a while (the wide far mover is easily crowded out) goes first.
 	for attempt in 6:
-		var t := _random_target()
+		var t := _random_target(_starved_kind() if attempt == 0 else -1)
 		var area := t.screen_footprint(_camera)
 		var behind_cover := t.kind != RangeTarget.Kind.PEEK and _overlaps_cover(area)
 		if not behind_cover and not _overlaps_live_target(area):
 			_add_target(t, area)
+			_last_spawned[t.kind] = _game_time
 			return
 		t.free()
 
 
-func _random_target() -> RangeTarget:
+## The kind of target that has gone longest without appearing, if that's
+## more than STARVED_AFTER seconds; otherwise -1.
+func _starved_kind() -> int:
+	var worst := -1
+	var worst_wait := STARVED_AFTER
+	for kind in RangeTarget.Kind.values():
+		var wait := _game_time - float(_last_spawned.get(kind, 0.0))
+		if wait > worst_wait:
+			worst_wait = wait
+			worst = kind
+	return worst
+
+
+## A random target; `force_kind` (a RangeTarget.Kind, or -1) picks the kind.
+func _random_target(force_kind: int = -1) -> RangeTarget:
 	var friendly := randf() < FRIENDLY_CHANCE
 	var roll := randf()
+	match force_kind:
+		RangeTarget.Kind.POP_UP:
+			roll = randf_range(0.0, 0.58)
+		RangeTarget.Kind.PEEK:
+			roll = 0.6
+		RangeTarget.Kind.MOVER:
+			roll = 0.8
+		RangeTarget.Kind.DEPTH:
+			roll = 0.9
 	if roll < 0.24:
 		return make_target(RangeTarget.Kind.POP_UP, friendly, _pick(NEAR_XS), NEAR_Z)
 	if roll < 0.44:
@@ -228,7 +257,7 @@ func make_target(kind: RangeTarget.Kind, friendly: bool, x: float = 0.0, z: floa
 	t.kind = kind
 	t.friendly = friendly
 	t.model = _target_model
-	t.face_material = _friendly_face if friendly else _target_face
+	t.face_material = _friendly_face if friendly else null  # Others use the model's own artwork.
 	match kind:
 		RangeTarget.Kind.POP_UP:
 			t.position = Vector3(x, 0.0, z)
@@ -332,7 +361,8 @@ func _on_target_shot(target: RangeTarget, local_hit: Vector3, world_hit: Vector3
 		text = "Friendly! %d" % points
 		color = Color(1.0, 0.4, 0.35)
 	else:
-		var base := _zone_points(Vector2(local_hit.x, local_hit.y))
+		var base := RangeTarget.zone_points(Vector2(local_hit.x, local_hit.y)) \
+			if RangeTarget.is_on_board(Vector2(local_hit.x, local_hit.y)) else 1
 		var moving := target.kind == RangeTarget.Kind.MOVER or target.kind == RangeTarget.Kind.DEPTH
 		if moving:
 			base += MOVING_BONUS
@@ -360,17 +390,6 @@ func _path_hit_on_board(path: Array, board: Node3D) -> Vector3:
 		return board.to_local(start)
 	var distance := (face_point - start).dot(normal) / facing
 	return board.to_local(start + direction * distance)
-
-
-## Points for where the ball struck the silhouette (meters from its center).
-func _zone_points(local: Vector2) -> int:
-	if not RangeTarget.is_on_board(local):
-		return BODY_POINTS  # Clipped an edge.
-	var r := local.distance_to(RangeTarget.BULL_CENTER)
-	for i in RangeTarget.BULL_RINGS.size():
-		if r <= RangeTarget.BULL_RINGS[i]:
-			return ZONE_POINTS[i]
-	return BODY_POINTS
 
 
 ## x1 near, x2 mid-range, x3 far: how far the hit was from the camera.

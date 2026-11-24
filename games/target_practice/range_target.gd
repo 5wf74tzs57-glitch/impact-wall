@@ -1,13 +1,18 @@
 class_name RangeTarget
 extends Node3D
-## One person-shaped target on the outdoor range, with its own way of moving:
+## One cartoon person target on the outdoor range, with its own way of moving:
 ##   POP_UP - rises out of the ground, stays up for `up_time`, sinks back.
 ##   MOVER  - rises, slides side to side along a rail, then sinks.
 ##   DEPTH  - rises, walks toward or away from the camera, then sinks.
 ##   PEEK   - slides out from behind cover, waits, ducks back (a few times).
 ## A friendly target is blue with a smiley face; hitting it is a penalty.
-## The board shatters when a ball hits it, using the pre-broken shards from
-## tools/blender/make_person_target.py.
+##
+## The model is Tim's cartoon target (assets/source/targets.blend), split into
+## Head, Left, Center and Right, with pre-broken shards for each part made by
+## tools/blender/make_cartoon_shards.py. Where the ball lands decides what
+## breaks: the head knocks off just the head, the outer sides break off that
+## side, and the inner three chest rings or the middle shatter everything.
+## If only part breaks, the rest of the target tips over backwards.
 
 enum Kind { POP_UP, MOVER, DEPTH, PEEK }
 
@@ -17,16 +22,24 @@ signal shot(target: RangeTarget, local_hit: Vector3, world_hit: Vector3)
 ## Emitted when the target has gone away (shot, or its time ran out).
 signal finished(target: RangeTarget)
 
-# The silhouette, in meters from the board's center (match the Blender script).
-const HALF_WIDTH := 0.3
-const BOTTOM := -0.45
-const TOP := 0.46
+# The silhouette, in meters from the board's center (measured from the model).
+const HALF_WIDTH := 0.307
+const BOTTOM := -0.461
+const TOP := 0.461
 const THICKNESS := 0.12
-const HEAD_CENTER := Vector2(0.0, 0.31)
-const HEAD_RADIUS := 0.15
-## The bullseye on the chest and its scoring rings (match person_target.gdshader).
-const BULL_CENTER := Vector2(0.0, -0.12)
-const BULL_RINGS := [0.05, 0.11, 0.17]
+const NECK_Y := 0.173  # Where the head meets the torso.
+const SIDE_X := 0.144  # Where the side parts meet the center.
+const HEAD_CENTER := Vector2(0.0, 0.314)
+const HEAD_RADIUS := 0.147
+## The artwork's bullseyes, measured from the texture: ring edges from the
+## center outward (meters). Chest rings are worth 5, 4, 3, 2, 1; head rings
+## 5, 4, 3 (the rest of the head 2).
+const BULL_CENTER := Vector2(0.0, -0.157)
+const CHEST_RINGS := [0.055, 0.108, 0.16, 0.212, 0.262]
+const HEAD_RINGS := [0.031, 0.065, 0.095]
+## Hits this close to the chest bullseye (the 5, 4 and 3 rings) shatter it all.
+const FULL_SHATTER_RADIUS := 0.16
+const MODEL_PARTS := ["Head", "Left", "Center", "Right"]
 
 const RISE_TIME := 0.3
 const SINK_DEPTH := 1.6  # How far below the ground a target hides.
@@ -54,9 +67,13 @@ var model: PackedScene
 var face_material: Material
 
 var body: RigidBody3D
+var breakable: Breakable
 var _rig: Node3D
 var _tween: Tween
 var _is_shot := false
+
+## Collision shapes made from the model's parts, once per model.
+static var _part_shapes := {}
 
 
 func _ready() -> void:
@@ -116,9 +133,38 @@ func _path_offsets() -> Array[Vector3]:
 ## Whether a spot on the board's face (meters from its center) is on the
 ## silhouette, not in the gap beside the head.
 static func is_on_board(local: Vector2) -> bool:
-	if local.distance_to(HEAD_CENTER) <= HEAD_RADIUS:
-		return true
-	return absf(local.x) <= HALF_WIDTH and local.y >= BOTTOM and local.y <= 0.16
+	if local.y > NECK_Y:
+		return local.distance_to(HEAD_CENTER) <= HEAD_RADIUS
+	return absf(local.x) <= HALF_WIDTH and local.y >= BOTTOM
+
+
+## Which parts a hit at this spot breaks (an empty list breaks everything).
+static func parts_for_hit(local: Vector3) -> Array[String]:
+	var p := Vector2(local.x, local.y)
+	if p.y > NECK_Y:
+		return ["Head"]
+	if p.distance_to(BULL_CENTER) <= FULL_SHATTER_RADIUS:
+		return []
+	if p.x > SIDE_X:
+		return ["Right"]
+	if p.x < -SIDE_X:
+		return ["Left"]
+	return []
+
+
+## Points for a hit at this spot, before distance and moving bonuses.
+static func zone_points(local: Vector2) -> int:
+	if local.y > NECK_Y:
+		var rh := local.distance_to(HEAD_CENTER)
+		for i in HEAD_RINGS.size():
+			if rh <= HEAD_RINGS[i]:
+				return 5 - i
+		return 2
+	var r := local.distance_to(BULL_CENTER)
+	for i in CHEST_RINGS.size():
+		if r <= CHEST_RINGS[i]:
+			return 5 - i
+	return 1
 
 
 func _build_post() -> void:
@@ -139,36 +185,33 @@ func _build_board() -> void:
 	body.freeze = true  # Moved by this script, not by gravity.
 	body.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 	body.mass = 1.0
-	# Collision: a box for the torso and a disc for the head.
-	var torso := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(HALF_WIDTH * 2.0, 0.16 - BOTTOM, THICKNESS)
-	torso.shape = box
-	torso.position = Vector3(0.0, (0.16 + BOTTOM) / 2.0, 0.0)
-	body.add_child(torso)
-	var head := CollisionShape3D.new()
-	var disc := CylinderShape3D.new()
-	disc.radius = HEAD_RADIUS
-	disc.height = THICKNESS
-	head.shape = disc
-	head.rotation_degrees.x = 90.0
-	head.position = Vector3(HEAD_CENTER.x, HEAD_CENTER.y, 0.0)
-	body.add_child(head)
-
 	var visual := model.instantiate() as Node3D
-	var shards := visual.find_child("Shards", true, false)
-	if shards != null:
-		shards.free()  # Only used when it breaks.
-	var board := visual.find_child("Intact", true, false) as MeshInstance3D
-	if board != null:
-		board.set_surface_override_material(0, face_material)
+	for shards in visual.find_children("Shards*", "", true, false):
+		shards.free()  # Only used when a part breaks.
+	# One collision shape per part, made from the part's own mesh, so the hit
+	# area is exactly the drawn silhouette.
+	for part_name in MODEL_PARTS:
+		var part := visual.find_child("Part_" + part_name, true, false) as MeshInstance3D
+		if part == null:
+			push_error("RangeTarget: the model has no Part_%s." % part_name)
+			continue
+		if friendly:
+			part.set_surface_override_material(0, face_material)
+		var hit := CollisionShape3D.new()
+		hit.name = "Hit_" + part_name
+		hit.shape = _shape_for(part.mesh)
+		hit.transform = part.transform
+		body.add_child(hit)
 	body.add_child(visual)
-	var breakable := Breakable.new()
+	breakable = Breakable.new()
 	breakable.pieces_scene = model
-	var mats: Array[Material] = [face_material]
-	breakable.surface_materials = mats
+	if friendly:
+		var mats: Array[Material] = [face_material]
+		breakable.surface_materials = mats
+	breakable.face_z = THICKNESS / 2.0
+	breakable.parts_for_hit = RangeTarget.parts_for_hit
 	breakable.debris_parent = get_parent()  # Pieces outlive this target.
-	breakable.broken.connect(_on_broken)
+	breakable.parts_broken.connect(_on_parts_broken)
 	body.add_child(breakable)
 	# The board is not parented to the moving rig: physics would keep pulling
 	# it back. Instead it is placed where the rig says, every physics step.
@@ -177,12 +220,18 @@ func _build_board() -> void:
 	_sync_body()
 
 
+static func _shape_for(mesh: Mesh) -> Shape3D:
+	if not _part_shapes.has(mesh):
+		_part_shapes[mesh] = mesh.create_convex_shape(true, false)
+	return _part_shapes[mesh]
+
+
 func _physics_process(_delta: float) -> void:
 	_sync_body()
 
 
 func _sync_body() -> void:
-	if is_instance_valid(body) and not _is_shot:
+	if is_instance_valid(body):
 		body.global_transform = _board_transform()
 
 
@@ -192,13 +241,18 @@ func _board_transform() -> Transform3D:
 	return rig_xform.translated_local(Vector3(0.0, board_height, 0.0))
 
 
-func _on_broken(world_hit: Vector3) -> void:
+func _on_parts_broken(_parts: Array[String], local_hit: Vector3, all_gone: bool) -> void:
+	if _is_shot:
+		return  # Already scored; it's on its way down.
 	_is_shot = true
 	if _tween != null:
 		_tween.kill()
-	shot.emit(self, body.to_local(world_hit), world_hit)
-	# The board is gone; let the post drop away and tidy up shortly after.
+	shot.emit(self, local_hit, body.to_global(local_hit))
 	var t := create_tween().set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
+	if not all_gone:
+		# Part of it is left: tip over backwards, then sink.
+		t.tween_property(_rig, "rotation:x", -1.35, 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		t.tween_interval(0.4)
 	t.tween_property(_rig, "position:y", -SINK_DEPTH, 0.5).set_delay(0.3)
 	t.tween_callback(_finish)
 
