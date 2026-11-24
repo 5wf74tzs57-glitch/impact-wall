@@ -89,6 +89,8 @@ To install it (once per computer):
 4. In the 3D view, press **N** to open the sidebar and click the **Impact Wall** tab.
 
 ### Tim's cartoon target
+Keep `.blend` files in `assets/source/`. Godot doesn't import `.blend` files at all (it's switched off in Project Settings → Filesystem → Import → Blender), so if Godot ever asks for a Blender path, choose **Disable '.blend' Import**. Models come into the game as `.glb` exports.
+
 The game's target is designed in `assets/source/targets.blend` (Godot ignores that folder) as four convex parts, Head, Left, Center and Right, exported to `assets/targets/cartoon_target.glb`. After changing it, rebuild the game's copy with its pre-broken shards (and the artwork reduced to 1024) with:
 
 ```
